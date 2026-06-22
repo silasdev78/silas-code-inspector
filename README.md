@@ -1,4 +1,3 @@
-content = r"""# 🔍 Silas Code Inspector
 
 **Silas Code Inspector** is a multi-language static security scanner designed to find vulnerabilities in **TON blockchain smart contracts (Tact & FunC)**, as well as Go, Docker, and Web codebases. Over **90 security patterns**, adaptive learning, JSON/SARIF export, and ready for CI/CD.
 
