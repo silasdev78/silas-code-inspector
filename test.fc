@@ -1,0 +1,11 @@
+() recv_external(slice in_msg) impure {
+    ;; no seqno check, no sender check, no signature
+    var msg = in_msg~load_uint(32);
+    if (msg == 1) {
+        selfdestruct();
+    }
+}
+
+() recv_internal(int balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    ;; no bounced check
+}

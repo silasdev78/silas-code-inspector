@@ -20,12 +20,13 @@ var (
 	langFlag    string
 	outputFlag  string
 	learnerFlag bool
+	summaryFlag bool
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "silas [file or directory]",
 	Short: "Silas Code Inspector - multi-language security scanner",
-	Long:  "Scans TON, Go, Docker, Web, and Go module files for vulnerabilities.",
+	Long:  "Scans TON (Tact, FunC), Go, Docker, Web, and Go module files for vulnerabilities.",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
@@ -54,6 +55,11 @@ var rootCmd = &cobra.Command{
 			results = append(results, res)
 		}
 
+		if summaryFlag {
+			printSummary(results)
+			return
+		}
+
 		switch outputFlag {
 		case "json":
 			if err := report.WriteJSON(results, os.Stdout); err != nil {
@@ -64,7 +70,7 @@ var rootCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "Error writing SARIF: %v\n", err)
 			}
 		default:
-			// text output already printed by scanFile
+			// text output already printed by scanFile if we didn't --summary
 		}
 
 		if learnerFlag && l != nil {
@@ -78,7 +84,9 @@ var rootCmd = &cobra.Command{
 func scanFile(path string, l *learner.Learner) report.Result {
 	lang := detectLang(path)
 	if lang == "" {
-		color.Yellow("Skipping unsupported file: %s\n", path)
+		if !summaryFlag {
+			color.Yellow("Skipping unsupported file: %s\n", path)
+		}
 		return report.Result{File: path}
 	}
 
@@ -90,7 +98,9 @@ func scanFile(path string, l *learner.Learner) report.Result {
 
 	scanner, err := engine.NewScanner(lang)
 	if err != nil {
-		color.Yellow("Unsupported language for %s: %v\n", path, err)
+		if !summaryFlag {
+			color.Yellow("Unsupported language for %s: %v\n", path, err)
+		}
 		return report.Result{File: path}
 	}
 
@@ -107,7 +117,9 @@ func scanFile(path string, l *learner.Learner) report.Result {
 		issues = filtered
 	}
 
-	printResults(path, issues)
+	if !summaryFlag {
+		printResults(path, issues)
+	}
 	return report.Result{File: path, Issues: issues}
 }
 
@@ -115,6 +127,8 @@ func scanDirectory(dir string, l *learner.Learner) []report.Result {
 	var files []string
 	extensions := map[string]string{
 		".tact": "tact",
+		".fc":   "func",
+		".fif":  "func",
 		".go":   "go",
 		".html": "web",
 		".js":   "web",
@@ -167,6 +181,8 @@ func detectLang(path string) string {
 		return "gomod"
 	case ext == ".tact":
 		return "tact"
+	case ext == ".fc" || ext == ".fif":
+		return "func"
 	case ext == ".go":
 		return "go"
 	case ext == ".html" || ext == ".js" || ext == ".ts":
@@ -218,10 +234,44 @@ func severityColor(s domain.Severity) string {
 	}
 }
 
+func printSummary(results []report.Result) {
+	sevCount := map[domain.Severity]int{
+		domain.SeverityCritical: 0,
+		domain.SeverityHigh:     0,
+		domain.SeverityMedium:   0,
+		domain.SeverityLow:      0,
+		domain.SeverityInfo:     0,
+	}
+	patternCount := map[string]int{}
+
+	for _, res := range results {
+		for _, issue := range res.Issues {
+			sevCount[issue.Severity]++
+			patternCount[issue.Title]++
+		}
+	}
+
+	fmt.Println("\n===== Silas Scan Summary =====")
+	fmt.Println("Severity Breakdown:")
+	for _, sev := range []domain.Severity{domain.SeverityCritical, domain.SeverityHigh, domain.SeverityMedium, domain.SeverityLow, domain.SeverityInfo} {
+		if count, ok := sevCount[sev]; ok && count > 0 {
+			fmt.Printf("  %s: %d\n", severityColor(sev), count)
+		}
+	}
+	fmt.Println("\nTop Patterns:")
+	for pattern, count := range patternCount {
+		if count > 0 {
+			fmt.Printf("  %s: %d\n", pattern, count)
+		}
+	}
+	fmt.Println("==============================")
+}
+
 func main() {
-	rootCmd.Flags().StringVarP(&langFlag, "lang", "l", "", "Force language (go, docker, web, tact, gomod)")
+	rootCmd.Flags().StringVarP(&langFlag, "lang", "l", "", "Force language (go, docker, web, tact, func, gomod)")
 	rootCmd.Flags().StringVarP(&outputFlag, "output", "o", "text", "Output format: text, json, sarif")
 	rootCmd.Flags().BoolVar(&learnerFlag, "learner", false, "Enable adaptive learning (requires .silas-state.json)")
+	rootCmd.Flags().BoolVar(&summaryFlag, "summary", false, "Show a summary of issues instead of detailed list")
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

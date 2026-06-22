@@ -5,6 +5,7 @@ import (
 
 	"github.com/silasdev78/silas-code-inspector/internal/domain"
 	"github.com/silasdev78/silas-code-inspector/internal/engine/docker"
+	funcc "github.com/silasdev78/silas-code-inspector/internal/engine/func"
 	"github.com/silasdev78/silas-code-inspector/internal/engine/golang"
 	"github.com/silasdev78/silas-code-inspector/internal/engine/gomod"
 	"github.com/silasdev78/silas-code-inspector/internal/engine/tact"
@@ -27,6 +28,8 @@ func NewScanner(lang string) (Scanner, error) {
 		return web.NewScanner(), nil
 	case "gomod", "go.mod":
 		return gomod.NewScanner(), nil
+	case "func", "fift", "fc":
+		return funcc.NewScanner(), nil
 	default:
 		return nil, fmt.Errorf("unsupported language: %s", lang)
 	}

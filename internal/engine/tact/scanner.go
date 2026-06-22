@@ -17,15 +17,16 @@ func NewScanner() *Scanner {
 }
 
 func (s *Scanner) Scan(source string) []domain.Issue {
-	var issues []domain.Issue
+	cleanSource := removeComments(source)
 	lines := strings.Split(source, "\n")
+	var issues []domain.Issue
 
 	for _, pattern := range s.patterns {
 		re, err := regexp.Compile(pattern.Regex)
 		if err != nil {
 			continue
 		}
-		matches := re.FindAllStringIndex(source, -1)
+		matches := re.FindAllStringIndex(cleanSource, -1)
 		for _, match := range matches {
 			lineNum := lineNumber(source, match[0])
 			snippet := ""
@@ -44,6 +45,16 @@ func (s *Scanner) Scan(source string) []domain.Issue {
 		}
 	}
 	return issues
+}
+
+func removeComments(source string) string {
+	// remove /* ... */ comments
+	block := regexp.MustCompile(`/\*[\s\S]*?\*/`)
+	out := block.ReplaceAllString(source, "")
+	// remove // line comments
+	line := regexp.MustCompile(`//.*`)
+	out = line.ReplaceAllString(out, "")
+	return out
 }
 
 func lineNumber(source string, offset int) int {
