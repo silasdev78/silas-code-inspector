@@ -1,0 +1,56 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Silas Code Inspector",
+          "version": "0.2.0"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "Vulnerable dependency: CVE-2020-28483",
+          "level": "error",
+          "message": {
+            "text": "HTTP response splitting in Gin before 1.7.0. (module: github.com/gin-gonic/gin version: v1.6.3)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "go.mod"
+                },
+                "region": {
+                  "startLine": 0,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "Vulnerable dependency: CVE-2020-29652",
+          "level": "error",
+          "message": {
+            "text": "Null pointer dereference in ssh server. (module: golang.org/x/crypto version: v0.0.0-20201201000000-000000000000)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "go.mod"
+                },
+                "region": {
+                  "startLine": 0,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

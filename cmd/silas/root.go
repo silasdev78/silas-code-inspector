@@ -5,60 +5,202 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/silasdev78/silas-code-inspector/internal/domain"
-	"github.com/silasdev78/silas-code-inspector/internal/engine/tact"
+	"github.com/silasdev78/silas-code-inspector/internal/engine"
+	"github.com/silasdev78/silas-code-inspector/internal/learner"
+	"github.com/silasdev78/silas-code-inspector/internal/report"
+)
+
+var (
+	langFlag    string
+	outputFlag  string
+	learnerFlag bool
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "silas <file.tact>",
-	Short: "Silas Code Inspector - TON smart contract scanner",
-	Long:  "A static analysis tool for finding security vulnerabilities in Tact/TON smart contracts.",
-	Args:  cobra.ExactArgs(1),
+	Use:   "silas [file or directory]",
+	Short: "Silas Code Inspector - multi-language security scanner",
+	Long:  "Scans TON, Go, Docker, Web, and Go module files for vulnerabilities.",
+	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		path := args[0]
+		target := args[0]
 
-		if ext := strings.ToLower(filepath.Ext(path)); ext != ".tact" {
-			fmt.Fprintf(os.Stderr, "Error: only .tact files are supported, got %q\n", ext)
-			os.Exit(1)
+		var l *learner.Learner
+		if learnerFlag {
+			lr, err := learner.NewLearner(".silas-state.json")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error initializing learner: %v\n", err)
+			} else {
+				l = lr
+			}
 		}
 
-		data, err := os.ReadFile(path)
+		info, err := os.Stat(target)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading file: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
-		scanner := tact.NewScanner()
-		issues := scanner.Scan(string(data))
-
-		if len(issues) == 0 {
-			color.Green("✓ No vulnerabilities found!")
-			return
+		var results []report.Result
+		if info.IsDir() {
+			results = scanDirectory(target, l)
+		} else {
+			res := scanFile(target, l)
+			results = append(results, res)
 		}
 
-		color.Red("✗ Found %d potential issues:\n", len(issues))
+		switch outputFlag {
+		case "json":
+			if err := report.WriteJSON(results, os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing JSON: %v\n", err)
+			}
+		case "sarif":
+			if err := report.WriteSARIF(results, os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing SARIF: %v\n", err)
+			}
+		default:
+			// text output already printed by scanFile
+		}
 
-		for _, issue := range issues {
-			printIssue(issue)
+		if learnerFlag && l != nil {
+			if err := l.Save(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error saving learner state: %v\n", err)
+			}
 		}
 	},
+}
+
+func scanFile(path string, l *learner.Learner) report.Result {
+	lang := detectLang(path)
+	if lang == "" {
+		color.Yellow("Skipping unsupported file: %s\n", path)
+		return report.Result{File: path}
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", path, err)
+		return report.Result{File: path}
+	}
+
+	scanner, err := engine.NewScanner(lang)
+	if err != nil {
+		color.Yellow("Unsupported language for %s: %v\n", path, err)
+		return report.Result{File: path}
+	}
+
+	issues := scanner.Scan(string(data))
+
+	if l != nil {
+		var filtered []domain.Issue
+		for _, issue := range issues {
+			weight := l.GetWeight(issue.Title)
+			if weight >= 0.5 {
+				filtered = append(filtered, issue)
+			}
+		}
+		issues = filtered
+	}
+
+	printResults(path, issues)
+	return report.Result{File: path, Issues: issues}
+}
+
+func scanDirectory(dir string, l *learner.Learner) []report.Result {
+	var files []string
+	extensions := map[string]string{
+		".tact": "tact",
+		".go":   "go",
+		".html": "web",
+		".js":   "web",
+		".ts":   "web",
+		".mod":  "gomod",
+	}
+
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		base := filepath.Base(path)
+		if strings.EqualFold(base, "dockerfile") || strings.HasPrefix(strings.ToLower(base), "dockerfile") {
+			files = append(files, path)
+			return nil
+		}
+		if base == "go.mod" {
+			files = append(files, path)
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if _, ok := extensions[ext]; ok {
+			files = append(files, path)
+		}
+		return nil
+	})
+
+	var results []report.Result
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, file := range files {
+		wg.Add(1)
+		go func(f string) {
+			defer wg.Done()
+			res := scanFile(f, l)
+			mu.Lock()
+			results = append(results, res)
+			mu.Unlock()
+		}(file)
+	}
+	wg.Wait()
+	return results
+}
+
+func detectLang(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	base := filepath.Base(path)
+	switch {
+	case base == "go.mod":
+		return "gomod"
+	case ext == ".tact":
+		return "tact"
+	case ext == ".go":
+		return "go"
+	case ext == ".html" || ext == ".js" || ext == ".ts":
+		return "web"
+	case strings.EqualFold(base, "dockerfile") || strings.HasPrefix(strings.ToLower(base), "dockerfile"):
+		return "docker"
+	default:
+		return ""
+	}
+}
+
+func printResults(path string, issues []domain.Issue) {
+	if outputFlag != "text" && outputFlag != "" {
+		return
+	}
+	if len(issues) == 0 {
+		color.Green("✓ %s: No vulnerabilities found.\n", path)
+		return
+	}
+	color.Red("✗ %s: %d issues found.\n", path, len(issues))
+	for _, issue := range issues {
+		printIssue(issue)
+	}
 }
 
 func printIssue(issue domain.Issue) {
 	sevStr := severityColor(issue.Severity)
 	bold := color.New(color.Bold).SprintfFunc()
-	fmt.Printf("\n%s\n", bold(issue.Title))
-	fmt.Printf("  Severity: %s\n", sevStr)
-	fmt.Printf("  Line: %d\n", issue.Line)
+	fmt.Printf("  • %s\n", bold(issue.Title))
+	fmt.Printf("    Severity: %s | Line: %d\n", sevStr, issue.Line)
 	if issue.Snippet != "" {
-		fmt.Printf("  Code: %s\n", color.YellowString(issue.Snippet))
+		fmt.Printf("    Code: %s\n", color.YellowString(issue.Snippet))
 	}
-	fmt.Printf("  Issue: %s\n", issue.Description)
-	fmt.Printf("  Fix: %s\n", color.GreenString(issue.Recommendation))
+	fmt.Printf("    Fix: %s\n\n", color.GreenString(issue.Recommendation))
 }
 
 func severityColor(s domain.Severity) string {
@@ -77,6 +219,9 @@ func severityColor(s domain.Severity) string {
 }
 
 func main() {
+	rootCmd.Flags().StringVarP(&langFlag, "lang", "l", "", "Force language (go, docker, web, tact, gomod)")
+	rootCmd.Flags().StringVarP(&outputFlag, "output", "o", "text", "Output format: text, json, sarif")
+	rootCmd.Flags().BoolVar(&learnerFlag, "learner", false, "Enable adaptive learning (requires .silas-state.json)")
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

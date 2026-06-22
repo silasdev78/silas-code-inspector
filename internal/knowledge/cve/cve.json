@@ -1,0 +1,23 @@
+[
+  {
+    "module": "github.com/gin-gonic/gin",
+    "version": "< 1.7.0",
+    "cve": "CVE-2020-28483",
+    "severity": "HIGH",
+    "description": "HTTP response splitting in Gin before 1.7.0."
+  },
+  {
+    "module": "golang.org/x/crypto",
+    "version": "< 0.0.0-20201216223049-8b5274cf687f",
+    "cve": "CVE-2020-29652",
+    "severity": "CRITICAL",
+    "description": "Null pointer dereference in ssh server."
+  },
+  {
+    "module": "github.com/labstack/echo/v4",
+    "version": "< 4.1.17",
+    "cve": "CVE-2020-12692",
+    "severity": "MEDIUM",
+    "description": "Open redirect vulnerability."
+  }
+]
