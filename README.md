@@ -1,10 +1,5 @@
 content = r"""# 🔍 Silas Code Inspector
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/silasdev78/silas-code-inspector)](https://go.dev)
-[![Build](https://img.shields.io/github/actions/workflow/status/silasdev78/silas-code-inspector/silas.yml?branch=main)](https://github.com/silasdev78/silas-code-inspector/actions)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/silasdev78/silas-code-inspector)](https://github.com/silasdev78/silas-code-inspector/releases)
-
 **Silas Code Inspector** is a multi-language static security scanner designed to find vulnerabilities in **TON blockchain smart contracts (Tact & FunC)**, as well as Go, Docker, and Web codebases. Over **90 security patterns**, adaptive learning, JSON/SARIF export, and ready for CI/CD.
 
 ## ✨ Features
